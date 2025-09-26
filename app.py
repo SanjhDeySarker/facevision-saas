@@ -2,6 +2,9 @@ from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 import os
 import warnings
+from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
+from models.user import db, User  # New import
+import datetime
 
 # Suppress pkg_resources warnings (from previous fixes)
 warnings.filterwarnings("ignore", module="pkg_resources")
@@ -13,6 +16,20 @@ from models.compare import compare_faces
 from models.metadata import create_metadata, save_metadata
 
 app = Flask(__name__)
+# Database config (SQLite)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db.init_app(app)
+
+# JWT config
+app.config['JWT_SECRET_KEY'] = 'your-super-secret-key-change-in-prod'  # Change this!
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = datetime.timedelta(hours=1)
+jwt = JWTManager(app)
+
+# Create tables (run once)
+with app.app_context():
+    db.create_all()
+
 
 # Config: Temp upload folder (creates if missing)
 UPLOAD_FOLDER = 'uploads'
@@ -119,6 +136,74 @@ def get_metadata():
         return jsonify({"success": True, "metadata": []})
     except Exception as e:
         return jsonify({"success": False, "error": f"Retrieval failed: {str(e)}"}), 500
+@app.route('/register', methods=['POST'])
+def register():
+    """Register new user (JSON: {"email": "user@example.com", "password": "pass123"})."""
+    data = request.json
+    if not data or 'email' not in data or 'password' not in data:
+        return jsonify({"success": False, "error": "Missing email or password"}), 400
+    if User.query.filter_by(email=data['email']).first():
+        return jsonify({"success": False, "error": "Email already registered"}), 400
+    try:
+        user = User(email=data['email'])
+        user.set_password(data['password'])
+        db.session.add(user)
+        db.session.commit()
+        return jsonify({"success": True, "message": "User  registered successfully"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": f"Registration failed: {str(e)}"}), 500
 
+@app.route('/login', methods=['POST'])
+def login():
+    """Login user (JSON: {"email": "user@example.com", "password": "pass123"}). Returns JWT token."""
+    data = request.json
+    if not data or 'email' not in data or 'password' not in data:
+        return jsonify({"success": False, "error": "Missing email or password"}), 400
+    user = User.query.filter_by(email=data['email']).first()
+    if user and user.check_password(data['password']) and user.is_active:
+        access_token = create_access_token(identity=user.id)
+        return jsonify({
+            "success": True,
+            "access_token": access_token,
+            "user": user.to_dict()
+        })
+    return jsonify({"success": False, "error": "Invalid email or password"}), 401
+
+# Protect existing routes with JWT (add to each: @jwt_required)
+@app.route('/detect', methods=['POST'])
+@jwt_required()  # Add this line
+def detect_route():
+    # ... (keep existing code)
+    # Optional: Get user ID from token
+    current_user_id = get_jwt_identity()
+    # You can log: print(f"Detection by user {current_user_id}")
+    # ... (rest unchanged)
+
+@app.route('/compare', methods=['POST'])
+@jwt_required()  # Add this
+def compare_route():
+    # ... (keep existing; add current_user_id if needed)
+
+@app.route('/metadata', methods=['POST'])
+@jwt_required()  # Add this
+def metadata_route():
+    # ... (keep existing)
+    # Enhance: Use user_id from token instead of request
+    current_user_id = get_jwt_identity()
+    data['user_id'] = current_user_id  # Override with authenticated user
+    # ... (rest unchanged)
+
+@app.route('/metadata', methods=['GET'])
+@jwt_required()  # Add this for security
+def get_metadata():
+    # ... (keep existing)
+    # Filter by user: 
+    current_user_id = get_jwt_identity()
+    with open('face_metadata.json', 'r') as f:
+        import json
+        all_data = json.load(f)
+    user_metadata = [item for item in all_data if item.get('user_id') == str(current_user_id)]
+    return jsonify({"success": True, "metadata": user_metadata})
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
