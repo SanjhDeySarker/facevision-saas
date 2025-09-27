@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Metadata - Face SaaS</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>My Metadata</h1>
+        <button onclick="window.location.href='/'">Back to Dashboard</button>
+        <button id="logout">Logout</button>
+        <div id="metadataList"></div>
+        <div id="message"></div>
+    </div>
+    <script>
+        const token = localStorage.getItem('token');
+        if (!token) window.location.href = '/login';
+
+        async function apiCall(url, options = {}) {
+            const headers = { 'Authorization': `Bearer ${token}`, ...options.headers };
+            const response = await fetch(url, { ...options, headers });
+            if (response.status === 401) { localStorage.removeItem('token'); window.location.href = '/login'; }
+            return response.json();
+        }
+
+        document.getElementById('logout').addEventListener('click', () => {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+        });
+
+        // Load metadata on page load
+        async function loadMetadata() {
+            try {
+                const data = await apiCall('/metadata');
+                const list = document.getElementById('metadataList');
+                if (data.success && data.metadata.length > 0) {
+                    list.innerHTML = '<h2>Your Entries:</h2>' + data.metadata.map(item => `<pre>${JSON.stringify(item, null, 2)}</pre>`).join('');
+                } else {
+                    list.innerHTML = '<p>No metadata yet. Upload images on dashboard!</p>';
+                }
+            } catch (err) {
+                document.getElementById('message').textContent = 'Error loading metadata: ' + err.message;
+            }
+        }
+        loadMetadata();
+    </script>
+</body>
+</html>
