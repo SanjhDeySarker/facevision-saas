@@ -5,7 +5,8 @@ import warnings
 from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
 from models.user import db, User  # Assumes models/user.py exists
 import datetime
-import json  # For metadata loading
+import json  # For metadata 
+from flask import render_template  # For HTML templates
 
 # Suppress pkg_resources warnings (from previous fixes)
 warnings.filterwarnings("ignore", module="pkg_resources")
@@ -48,7 +49,25 @@ def allowed_file(filename):
 def health_check():
     """Simple health endpoint for testing API (public)."""
     return jsonify({"status": "healthy", "message": "Face SaaS API ready (local, free)"})
+@app.route('/', methods=['GET'])
+def dashboard():
+    """Main dashboard (requires login; redirects to login if no token)."""
+    return render_template('dashboard.html')
 
+@app.route('/login', methods=['GET'])
+def login_page():
+    """Login page (public)."""
+    return render_template('login.html')
+
+@app.route('/register', methods=['GET'])
+def register_page():
+    """Register page (public)."""
+    return render_template('register.html')
+
+@app.route('/metadata', methods=['GET'])
+def metadata_page():
+    """User  metadata viewer (protected; uses API under the hood)."""
+    return render_template('metadata.html')
 @app.route('/register', methods=['POST'])
 def register():
     """Register new user (JSON: {"email": "user@example.com", "password": "pass123"})."""
